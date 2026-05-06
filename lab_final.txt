@@ -1,0 +1,1126 @@
+#CSP(NORMAL):
+from ortools.sat.python import cp_model
+
+# Create the model
+model = cp_model.CpModel()
+
+# Define variables with domain {0, 1, 2}
+num_vals = 3
+x = model.NewIntVar(0, num_vals - 1, "x")
+y = model.NewIntVar(0, num_vals - 1, "y")
+z = model.NewIntVar(0, num_vals - 1, "z")
+
+# Add constraint: x != y
+model.Add(x != y)
+
+# Create solver
+solver = cp_model.CpSolver()
+
+# Solve the model
+status = solver.Solve(model)
+print(status)
+# Display solver status in a readable way
+status_mapping = {
+    cp_model.OPTIMAL: "OPTIMAL",
+    cp_model.FEASIBLE: "FEASIBLE",
+    cp_model.INFEASIBLE: "INFEASIBLE",
+    cp_model.UNKNOWN: "UNKNOWN"
+}
+
+print(f"Solver Status: {status_mapping.get(status, 'UNKNOWN')} ({status})")
+
+# Print solution if feasible or optimal
+if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
+    print(f"x = {solver.Value(x)}")
+    print(f"y = {solver.Value(y)}")
+    print(f"z = {solver.Value(z)}")
+else:
+    print("No feasible solution found.")
+
+
+
+2) PYTHAGORAS:
+
+import math      # Used for mathematical operations like square root
+import random    # Used to generate random start and goal positions
+from ortools.sat.python import cp_model   # Import OR-Tools CP-SAT solver
+
+# Class representing the grid environment
+class GridEnvironment:
+    def __init__(self, size):
+        self.size = size   # Size of the grid (e.g., 10x10)
+
+        # Create a grid filled with zeros
+        self.grid = [[0 for _ in range(size)] for _ in range(size)]
+
+        # Randomly generate the start position inside the grid
+        self.start = (random.randint(0, size-1), random.randint(0, size-1))
+
+        # Randomly generate the goal position inside the grid
+        self.goal = (random.randint(0, size-1), random.randint(0, size-1))
+
+    # Function to solve the CSP problem
+    def solve_csp(self):
+
+        # Create a CSP model
+        model = cp_model.CpModel()
+
+        # Extract x and y coordinates of start and goal positions
+        x1, y1 = self.start # point A (0,3)(0,6)
+        x2, y2 = self.goal
+
+        # -------- Variables --------
+
+        # Calculate horizontal distance between start and goal
+        a = abs(x2 - x1)
+
+        # Calculate vertical distance between start and goal
+        b = abs(y2 - y1)
+
+        # Create CSP variable for the hypotenuse (distance)
+        # Range is from 0 to twice the grid size
+        c = model.NewIntVar(0, self.size * 2, 'c')
+
+        # Variables to store squared values
+        a_sq = model.NewIntVar(0, self.size**2, 'a_sq') #a2
+        b_sq = model.NewIntVar(0, self.size**2, 'b_sq')#3b2
+        c_sq = model.NewIntVar(0, self.size**2, 'c_sq')
+
+        # -------- Constraints --------
+
+        # Define a_sq = a * a
+        model.AddMultiplicationEquality(a_sq, [a, a])
+
+        # Define b_sq = b * b
+        model.AddMultiplicationEquality(b_sq, [b, b])
+
+        # Define c_sq = c * c
+        model.AddMultiplicationEquality(c_sq, [c, c])
+
+        # Apply Pythagorean theorem: c² = a² + b²
+        model.Add(c_sq == a_sq + b_sq)
+
+        # -------- Solve the model --------
+
+        # Create solver object
+        solver = cp_model.CpSolver()
+
+        # Solve the CSP model
+        status = solver.Solve(model)
+
+        # If a valid solution is found
+        if status == cp_model.FEASIBLE or status == cp_model.OPTIMAL:
+
+            # Return base, height, and calculated hypotenuse
+            return a, b, solver.Value(c)
+
+            # (This line will never execute because return is above)
+            print(a, b, solver.Value(c))
+
+        # If solver fails, calculate distance using normal math formula
+        return a, b, math.sqrt(a**2 + b**2)
+
+
+    # Function to display results
+    def display(self):
+
+        # Print start and goal positions
+        print(f"Start Position: {self.start}")
+        print(f"Goal Position: {self.goal}")
+
+        # Solve the CSP problem and get distances
+        a, b, c = self.solve_csp()
+
+        # Display calculated distances
+        print(f"Calculated Distances: Base={a}, Height={b}, Hypotenuse={c:.2f}")
+
+
+# -------- Simulation --------
+
+# Create a grid environment of size 10x10
+environment = GridEnvironment(10)
+
+# Run the simulation and display results
+environment.display()
+
+
+#CSP(blocked path):
+
+#TASK 1:
+#a)
+#CSP DEFINITION:
+#VARIABLES:
+# - a, b: Horizontal and vertical distances (Base and Height).
+# - a_sq, b_sq, c_sq: Squared values for calculations.
+# - c: The hypotenuse (distance) we want to find.
+#DOMAINS:
+# - a, b, c ∈ {0, ..., size * 2}
+# - a_sq, b_sq, c_sq ∈ {0, ..., size^2}
+#CONSTRAINTS:
+# - Start Point: (x1, y1), Goal Point: (x2, y2)
+# - Pythagorean Theorem: a^2 + b^2 = c^2
+# - Obstacles: If an obstacle is within the bounding box of (x1,y1) and (x2,y2), the path is invalid.
+
+#b)
+import math
+import random
+from ortools.sat.python import cp_model
+
+def solve_pythagorean_with_obstacles(size, start, goal, obstacles):
+    model = cp_model.CpModel()
+
+    x1, y1 = start
+    x2, y2 = goal
+    
+    # Calculate base and height
+    a_val = abs(x2 - x1)
+    b_val = abs(y2 - y1)
+
+    # -------- Variables --------
+    c = model.NewIntVar(0, size * 2, 'c')
+    a_sq = model.NewIntVar(0, size**2, 'a_sq')
+    b_sq = model.NewIntVar(0, size**2, 'b_sq')
+    c_sq = model.NewIntVar(0, size**2, 'c_sq')
+
+    # -------- Constraints --------
+    
+    # 1. Obstacle Check Logic
+    # Agar koi obstacle start aur goal ke beech "Rectangle" mein hai, to path block hai.
+    path_blocked = False
+    for obs in obstacles:
+        is_x_between = min(x1, x2) <= obs[0] <= max(x1, x2)
+        is_y_between = min(y1, y2) <= obs[1] <= max(y1, y2)
+        if is_x_between and is_y_between:
+            path_blocked = True
+            break
+
+    if path_blocked:
+        # Agar rasta block hai, to hum a ko domain se bahar (-1) kar dete hain taake solver fail ho jaye
+        model.Add(c == -1) 
+    else:
+        # Define a_sq = a * a and b_sq = b * b
+        model.AddMultiplicationEquality(a_sq, [a_val, a_val])
+        model.AddMultiplicationEquality(b_sq, [b_val, b_val])
+        
+        # Define c_sq = c * c
+        model.AddMultiplicationEquality(c_sq, [c, c])
+
+        # Apply Pythagorean theorem: a² + b² = c²
+        model.Add(c_sq == a_sq + b_sq)
+
+    # -------- Solver --------
+    solver = cp_model.CpSolver()
+    status = solver.Solve(model)
+
+    if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
+        return solver.Value(c), "Clear"
+    else:
+        # Agar block hai to math library se actual value return hogi magar status blocked ayega
+        return math.sqrt(a_val**2 + b_val**2), "Blocked"
+
+# Simulation parameters
+grid_size = 10
+start_pos = (random.randint(0, grid_size-1), random.randint(0, grid_size-1))
+target_pos = (random.randint(0, grid_size-1), random.randint(0, grid_size-1))
+
+# Randomly add some obstacles
+obs_list = [(random.randint(0, grid_size-1), random.randint(0, grid_size-1)) for _ in range(3)]
+
+# Run
+dist, status = solve_pythagorean_with_obstacles(grid_size, start_pos, target_pos, obs_list)
+
+print(f"Start Position: {start_pos}")
+print(f"Target Position: {target_pos}")
+print(f"Obstacles: {obs_list}")
+print(f"Status: {status}")
+print(f"Calculated Hypotenuse Distance: {dist:.2f}")
+
+
+#CSP(lab tasks):
+
+
+from ortools.sat.python import cp_model
+
+def solve_timetable():
+    model = cp_model.CpModel()
+    courses = ['AI', 'DS', 'DB', 'COAL', 'OS']
+    sizes = {'AI': 55, 'DS': 40, 'DB': 25, 'COAL': 35, 'OS': 20}
+    
+    # Variables
+    slots = {c: model.NewIntVar(1, 3, f'slot_{c}') for c in courses}
+    rooms = {c: model.NewIntVar(1, 2, f'room_{c}') for c in courses} # 1: R1(60), 2: R2(30)
+
+    # 1. Room Capacity Constraint
+    for c in courses:
+        if sizes[c] > 30:
+            model.Add(rooms[c] == 1)
+
+    # 2. Student Overlap (Conflict) Constraints
+    model.Add(slots['AI'] != slots['DS'])
+    model.Add(slots['AI'] != slots['DB'])
+    model.Add(slots['DS'] != slots['COAL'])
+    model.Add(slots['DB'] != slots['OS'])
+
+    # 3. Hard Rule: COAL in Slot 1 or 2
+    model.AddAllowedSelections([slots['COAL']], [(1,), (2,)])
+
+    # 4. Resource Constraint: If same slot, must be different room
+    for i in range(len(courses)):
+        for j in range(i + 1, len(courses)):
+            c1, c2 = courses[i], courses[j]
+            same_slot = model.NewBoolVar(f'{c1}_{c2}_same_slot')
+            model.Add(slots[c1] == slots[c2]).OnlyEnforceIf(same_slot)
+            model.Add(slots[c1] != slots[c2]).OnlyEnforceIf(same_slot.Not())
+            model.Add(rooms[c1] != rooms[c2]).OnlyEnforceIf(same_slot)
+
+    # 5. Extension: Soft Preference (AI in Slot 1)
+    ai_in_s1 = model.NewBoolVar('ai_in_s1')
+    model.Add(slots['AI'] == 1).OnlyEnforceIf(ai_in_s1)
+    model.Minimize(ai_in_s1.Not())
+
+    solver = cp_model.CpSolver()
+    if solver.Solve(model) == cp_model.OPTIMAL:
+        for c in courses:
+            print(f"{c}: Slot {solver.Value(slots[c])}, Room R{solver.Value(rooms[c])}")
+    else:
+        print("No solution found.")
+
+solve_timetable()
+
+
+
+2)
+from ortools.sat.python import cp_model
+
+def solve_traffic():
+    model = cp_model.CpModel()
+    nodes = ['A', 'B', 'C', 'D']
+    # 0 = NorthSouth (NS), 1 = EastWest (EW)
+    vars = {n: model.NewIntVar(0, 1, n) for n in nodes}
+
+    # Unary Constraint: D cannot use EW
+    model.Add(vars['D'] == 0)
+
+    # Binary Adjacency Constraints
+    edges = [('A', 'B'), ('A', 'C'), ('B', 'D'), ('C', 'D')]
+    for u, v in edges:
+        model.Add(vars[u] != vars[v])
+
+    class SolutionPrinter(cp_model.CpSolverSolutionCallback):
+        def __init__(self, vars):
+            cp_model.CpSolverSolutionCallback.__init__(self)
+            self.__vars = vars
+            self.count = 0
+        def on_solution_callback(self):
+            self.count += 1
+            mapping = {0: 'NS', 1: 'EW'}
+            res = {n: mapping[self.Value(self.__vars[n])] for n in nodes}
+            print(f"Assignment {self.count}: {res}")
+
+    solver = cp_model.CpSolver()
+    printer = SolutionPrinter(vars)
+    print("--- Traffic Light Assignments ---")
+    solver.SearchForAllSolutions(model, printer)
+
+solve_traffic()
+
+3) N QUEEN:
+
+from ortools.sat.python import cp_model
+
+def solve_n_queens():
+    model = cp_model.CpModel()
+    n = 8
+    # queens[i] = row index for queen in column i
+    queens = [model.NewIntVar(0, n - 1, f'q{i}') for i in range(n)]
+
+    model.AddAllDifferent(queens)
+    model.AddAllDifferent([queens[i] + i for i in range(n)]) # Upper diagonals
+    model.AddAllDifferent([queens[i] - i for i in range(n)]) # Lower diagonals
+
+    class NQueensPrinter(cp_model.CpSolverSolutionCallback):
+        def __init__(self, queens):
+            cp_model.CpSolverSolutionCallback.__init__(self)
+            self.queens = queens
+            self.count = 0
+        def on_solution_callback(self):
+            self.count += 1
+            if self.count <= 3:
+                print(f"Board {self.count}:")
+                for row in range(n):
+                    line = ""
+                    for col in range(n):
+                        if self.Value(self.queens[col]) == row: line += " Q "
+                        else: line += " . "
+                    print(line)
+                print("-" * 25)
+
+    solver = cp_model.CpSolver()
+    printer = NQueensPrinter(queens)
+    print("--- N-Queens (8 Cameras) ---")
+    solver.SearchForAllSolutions(model, printer)
+    print(f"Total Solutions Found: {printer.count}")
+
+solve_n_queens()
+
+4)
+from ortools.sat.python import cp_model
+
+def solve_relief(budget_max=150, med_min=8):
+    model = cp_model.CpModel()
+    F = model.NewIntVar(0, 100, 'Food')
+    W = model.NewIntVar(0, 100, 'Water')
+    M = model.NewIntVar(0, 100, 'Medicine')
+
+    # Constraints
+    model.Add(4*F + 3*W + 5*M <= 180)  # Volume
+    model.Add(6*F + 2*W + 4*M <= 200)  # Weight
+    model.Add(3*F + 5*W + 2*M <= budget_max)
+    model.Add(W >= 10)
+    model.Add(M >= med_min)
+
+    # Objective: Maximize impact
+    model.Maximize(7*F + 6*W + 9*M)
+
+    solver = cp_model.CpSolver()
+    status = solver.Solve(model)
+    
+    if status == cp_model.OPTIMAL:
+        return {
+            'Impact': solver.ObjectiveValue(),
+            'Units': (solver.Value(F), solver.Value(W), solver.Value(M)),
+            'Stats': f"Time: {solver.WallTime():.4f}s"
+        }
+    return None
+
+# Perform Analysis
+scenarios = {
+    "Original": (150, 8),
+    "Case A (Budget 130)": (130, 8),
+    "Case B (Meds Min 15)": (150, 15)
+}
+
+print("--- Disaster Relief Optimization ---")
+for name, (b, m) in scenarios.items():
+    res = solve_relief(b, m)
+    if res:
+        print(f"{name:20}: Impact={res['Impact']}, F/W/M={res['Units']}")
+    else:
+        print(f"{name:20}: Infeasible")
+
+5) grid :
+
+import math
+from ortools.sat.python import cp_model
+
+def solve_warehouse_diagonal(grid_size, start, goal, obstacles):
+    model = cp_model.CpModel()
+
+    x1, y1 = start
+    x2, y2 = goal
+    
+    # Calculate base (horizontal) and height (vertical) differences
+    a_val = abs(x2 - x1)
+    b_val = abs(y2 - y1)
+
+    # -------- Variables --------
+    # c represents the diagonal distance 
+    # Hum sqrt(2) ka factor pattern ke hisab se simple integers me handle karte hain
+    c_val_int = int(math.sqrt(a_val**2 + b_val**2))
+    
+    c = model.NewIntVar(0, grid_size * 2, 'diagonal_dist')
+    a_sq = model.NewIntVar(0, grid_size**2, 'a_sq')
+    b_sq = model.NewIntVar(0, grid_size**2, 'b_sq')
+    c_sq = model.NewIntVar(0, grid_size**2, 'c_sq')
+
+    # -------- Constraints --------
+    
+    # 1. Obstacle Check Logic (Rectangular zone checking)
+    # Agar start aur goal ke bounding box mein koi obstacle hai, toh path valid nahi.
+    path_blocked = False
+    for obs in obstacles:
+        is_x_between = min(x1, x2) <= obs[0] <= max(x1, x2)
+        is_y_between = min(y1, y2) <= obs[1] <= max(y1, y2)
+        if is_x_between and is_y_between:
+            path_blocked = True
+            break
+
+    # 2. Parity Check for Diagonal Movement
+    # Warehouse robot sirf diagonal move kar sakta hai, 
+    # iska matlab start aur target ka parity (sum of coordinates) same hona chahiye.
+    if (x1 + y1) % 2 != (x2 + y2) % 2:
+        path_blocked = True
+
+    if path_blocked:
+        # Domain constraint fail karne ke liye
+        model.Add(c == -1) 
+    else:
+        # a_sq = a * a aur b_sq = b * b set karna
+        model.AddMultiplicationEquality(a_sq, [a_val, a_val])
+        model.AddMultiplicationEquality(b_sq, [b_val, b_val])
+        
+        # c_sq = c * c
+        model.AddMultiplicationEquality(c_sq, [c, c])
+
+        # Pythagorean theorem: a² + b² = c²
+        model.Add(c_sq == a_sq + b_sq)
+
+    # -------- Solver --------
+    solver = cp_model.CpSolver()
+    status = solver.Solve(model)
+
+    if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
+        # Diagonal cost sqrt(2) hoti hai, pattern ke mutabiq distance return karein
+        actual_dist = math.sqrt(a_val**2 + b_val**2)
+        return actual_dist, "Valid Diagonal Path"
+    else:
+        # Agar solve nahi hua toh blocked status
+        return math.sqrt(a_val**2 + b_val**2), "Path Blocked/Invalid Parity"
+
+# --- Given Data ---
+grid_size = 6
+start_pos = (1, 1)
+target_pos = (6, 6)
+blocked_cells = [(2,2), (3,3), (4,4), (3,5), (5,3)]
+
+# Run
+dist, status = solve_warehouse_diagonal(grid_size, start_pos, target_pos, blocked_cells)
+
+print(f"--- Warehouse Robot Task 3 ---")
+print(f"Start: {start_pos} | Target: {target_pos}")
+print(f"Obstacles: {blocked_cells}")
+print(f"Status: {status}")
+print(f"Total Diagonal Cost: {dist:.2f}")
+
+
+
+#MINMAX:
+
+#TASK 1:
+import math
+
+def check_winner(board):
+    for i in range(3):
+        if board[i][0] == board[i][1] == board[i][2] != ' ':
+            return board[i][0]
+        if board[0][i] == board[1][i] == board[2][i] != ' ':
+            return board[0][i]
+    if board[0][0] == board[1][1] == board[2][2] != ' ':
+        return board[0][0]
+    if board[0][2] == board[1][1] == board[2][0] != ' ':
+        return board[0][2]
+    if all(cell != ' ' for row in board for cell in row):
+        return 'Draw'
+    return None
+
+def minimax(board, is_maximizing):
+    res = check_winner(board)
+    if res == 'X': return 1
+    if res == 'O': return -1
+    if res == 'Draw': return 0
+
+    if is_maximizing:
+        best_score = -math.inf
+        for r in range(3):
+            for c in range(3):
+                if board[r][c] == ' ':
+                    board[r][c] = 'X'
+                    score = minimax(board, False)
+                    board[r][c] = ' '
+                    best_score = max(score, best_score)
+        return best_score
+    else:
+        best_score = math.inf
+        for r in range(3):
+            for c in range(3):
+                if board[r][c] == ' ':
+                    board[r][c] = 'O'
+                    score = minimax(board, True)
+                    board[r][c] = ' '
+                    best_score = min(score, best_score)
+        return best_score
+
+def play():
+    board = [[' ' for _ in range(3)] for _ in range(3)]
+    while True:
+        for row in board: print("|".join(row))
+
+        while True:
+            try:
+                move = int(input("Enter move (1-9): ")) - 1
+                r, c = divmod(move, 3)
+                if board[r][c] == ' ':
+                    board[r][c] = 'O'
+                    break
+                else: print("Cell occupied.")
+            except: print("Invalid input.")
+
+        if check_winner(board): break
+
+        best_move = None
+        best_val = -math.inf
+        for r in range(3):
+            for c in range(3):
+                if board[r][c] == ' ':
+                    board[r][c] = 'X'
+                    val = minimax(board, False)
+                    board[r][c] = ' '
+                    if val > best_val:
+                        best_val = val
+                        best_move = (r, c)
+
+        board[best_move[0]][best_move[1]] = 'X'
+        print(f"AI chose {best_move} with score {best_val}")
+        if check_winner(board): break
+
+    for row in board: print("|".join(row))
+    print("Result:", check_winner(board))
+
+if __name__ == "__main__":
+    play()
+
+
+
+2)import math
+
+class Node:
+    def __init__(self, value=None):
+        self.value = value
+        self.children = []
+        self.minmax_value = None
+
+
+def minmax(node, depth, maximizing_player=True):
+    if depth == 0 or not node.children:
+        return node.value
+
+    if maximizing_player:
+        value = -math.inf
+        for child in node.children:
+            child_value = minmax(child, depth-1, False)
+            value = max(value, child_value) # max(0,4)
+        node.minmax_value = value
+        return value
+    else:
+        value = math.inf
+        for child in node.children:
+            child_value = minmax(child, depth-1, True)
+            value = min(value, child_value)
+        node.minmax_value = value
+        return value
+
+# Sample tree
+root = Node()
+root.value = 'A'
+
+n1 = Node('B')
+n2 = Node('C')
+root.children = [n1, n2]
+
+n3 = Node('D')
+n4 = Node('E')
+n5 = Node('F')
+n6 = Node('G')
+n1.children = [n3, n4]
+n2.children = [n5, n6]
+
+n7 = Node(2)
+n8 = Node(3)
+n9 = Node(5)
+n10 = Node(9)
+n3.children = [n7, n8]
+n4.children = [n9, n10]
+
+n11 = Node(0)
+n12 = Node(4)
+n13 = Node(7)
+n14 = Node(5)
+n5.children = [n11, n12]
+n6.children = [n13, n14]
+
+# Example usage
+minmax(root, 3)
+print("Minimax values:")
+print("A:", root.minmax_value)
+print("B:", n1.minmax_value)
+print("C:", n2.minmax_value)
+print("D:", n3.minmax_value)
+print("E:", n4.minmax_value)
+print("F:", n5.minmax_value)
+print("G:", n6.minmax_value)
+
+
+
+#ALPHA BETA:
+import math
+
+class Node:
+    def __init__(self, value=None):
+        self.value = value
+        self.children = []
+
+def alpha_beta(node, depth, alpha, beta, maximizing_player=True):
+    if depth == 0 or not node.children:
+        return node.value
+
+    if maximizing_player:
+        value = -math.inf
+        for child in node.children:
+            value = max(value, alpha_beta(child, depth-1, alpha, beta, False))
+            alpha = max(alpha, value)
+            if beta <= alpha: # alpha >= beta
+                print("Pruned node:", node)
+                break
+        node.minmax_value = value
+        return value
+    else:
+        value = math.inf
+        for child in node.children:
+            value = min(value, alpha_beta(child, depth-1, alpha, beta, True))
+            beta = min(beta, value)
+            if beta < alpha:
+                print("Pruned node:", child.value)
+                break
+        node.minmax_value = value
+        return value
+
+# Sample tree
+root = Node()
+root.value = 'A'
+
+n1 = Node('B')
+n2 = Node('C')
+root.children = [n1, n2]
+
+n3 = Node('D')
+n4 = Node('E')
+n5 = Node('F')
+n6 = Node('G')
+n1.children = [n3, n4]
+n2.children = [n5, n6]
+
+n7 = Node(2)
+n8 = Node(3)
+n9 = Node(5)
+n10 = Node(9)
+n3.children = [n7, n8]
+n4.children = [n9, n10]
+
+n11 = Node(0)
+n12 = Node(2)
+n13 = Node(7)
+n14 = Node(5)
+n5.children = [n11, n12]
+n6.children = [n13, n14]
+
+# Example usage
+alpha_beta(root, 3, -math.inf, math.inf)
+print("Minimax values:")
+print("A:", root.minmax_value)
+print("B:", n1.minmax_value)
+print("C:", n2.minmax_value)
+print("D:", n3.minmax_value)
+print("E:", n4.minmax_value)
+print("F:", n5.minmax_value)
+# print("G:", n6.minmax_value)
+
+
+#BAYSIAN NETWORK:
+#Q2:
+from pgmpy.models import DiscreteBayesianNetwork
+from pgmpy.factors.discrete import TabularCPD
+from pgmpy.inference import VariableElimination
+
+model = DiscreteBayesianNetwork([
+    ('Intelligence', 'Grade'),
+    ('StudyHours', 'Grade'),
+    ('Difficulty', 'Grade'),
+    ('Grade', 'Pass')
+])
+
+cpd_i = TabularCPD(variable='Intelligence', variable_card=2, values=[[0.7], [0.3]],
+                   state_names={'Intelligence': ['High', 'Low']})
+
+cpd_s = TabularCPD(variable='StudyHours', variable_card=2, values=[[0.6], [0.4]],
+                   state_names={'StudyHours': ['Sufficient', 'Insufficient']})
+
+cpd_d = TabularCPD(variable='Difficulty', variable_card=2, values=[[0.4], [0.6]],
+                   state_names={'Difficulty': ['Hard', 'Easy']})
+
+cpd_g = TabularCPD(
+    variable='Grade', variable_card=3,
+    values=[
+        [0.70, 0.90, 0.40, 0.60, 0.30, 0.50, 0.05, 0.20],
+        [0.20, 0.08, 0.40, 0.30, 0.40, 0.30, 0.15, 0.30],
+        [0.10, 0.02, 0.20, 0.10, 0.30, 0.20, 0.80, 0.50]
+    ],
+    evidence=['Intelligence', 'StudyHours', 'Difficulty'],
+    evidence_card=[2, 2, 2],
+    state_names={
+        'Grade': ['A', 'B', 'C'],
+        'Intelligence': ['High', 'Low'],
+        'StudyHours': ['Sufficient', 'Insufficient'],
+        'Difficulty': ['Hard', 'Easy']
+    }
+)
+
+cpd_p = TabularCPD(
+    variable='Pass', variable_card=2,
+    values=[[0.95, 0.80, 0.50],
+            [0.05, 0.20, 0.50]],
+    evidence=['Grade'], evidence_card=[3],
+    state_names={'Pass': ['Yes', 'No'], 'Grade': ['A', 'B', 'C']}
+)
+
+model.add_cpds(cpd_i, cpd_s, cpd_d, cpd_g, cpd_p)
+assert model.check_model()
+
+infer = VariableElimination(model)
+
+q1 = infer.query(variables=['Pass'], evidence={'StudyHours': 'Sufficient', 'Difficulty': 'Hard'})
+print("Probability of Passing (Given Suff Study, Hard Exam):")
+print(q1)
+
+q2 = infer.query(variables=['Intelligence'], evidence={'Pass': 'Yes'})
+print("\nProbability of High Intelligence (Given student passed):")
+print(q2)
+
+
+
+2) #Q3:
+from pgmpy.models import DiscreteBayesianNetwork
+from pgmpy.factors.discrete import TabularCPD
+from pgmpy.inference import VariableElimination
+
+model = DiscreteBayesianNetwork([
+    ('Disease', 'Fever'),
+    ('Disease', 'Cough'),
+    ('Disease', 'Fatigue'),
+    ('Disease', 'Chills')
+])
+
+cpd_disease = TabularCPD(variable='Disease', variable_card=2, values=[[0.3], [0.7]],
+                         state_names={'Disease': ['Flu', 'Cold']})
+
+cpd_fever = TabularCPD(variable='Fever', variable_card=2,
+                       values=[[0.9, 0.5], [0.1, 0.5]],
+                       evidence=['Disease'], evidence_card=[2],
+                       state_names={'Fever': ['Yes', 'No'], 'Disease': ['Flu', 'Cold']})
+
+cpd_cough = TabularCPD(variable='Cough', variable_card=2,
+                       values=[[0.8, 0.6], [0.2, 0.4]],
+                       evidence=['Disease'], evidence_card=[2],
+                       state_names={'Cough': ['Yes', 'No'], 'Disease': ['Flu', 'Cold']})
+
+cpd_fatigue = TabularCPD(variable='Fatigue', variable_card=2,
+                         values=[[0.7, 0.3], [0.3, 0.7]],
+                         evidence=['Disease'], evidence_card=[2],
+                         state_names={'Fatigue': ['Yes', 'No'], 'Disease': ['Flu', 'Cold']})
+
+cpd_chills = TabularCPD(variable='Chills', variable_card=2,
+                        values=[[0.6, 0.4], [0.4, 0.6]],
+                        evidence=['Disease'], evidence_card=[2],
+                        state_names={'Chills': ['Yes', 'No'], 'Disease': ['Flu', 'Cold']})
+
+model.add_cpds(cpd_disease, cpd_fever, cpd_cough, cpd_fatigue, cpd_chills)
+assert model.check_model()
+
+infer = VariableElimination(model)
+
+q1 = infer.query(variables=['Disease'], evidence={'Fever': 'Yes', 'Cough': 'Yes'})
+print("Task 1 - P(Disease | Fever=Yes, Cough=Yes):")
+print(q1)
+
+q2 = infer.query(variables=['Disease'], evidence={'Fever': 'Yes', 'Cough': 'Yes', 'Chills': 'Yes'})
+print("\nTask 2 - P(Disease | Fever=Yes, Cough=Yes, Chills=Yes):")
+print(q2)
+
+q3 = infer.query(variables=['Fatigue'], evidence={'Disease': 'Flu'})
+print("\nTask 3 - P(Fatigue | Disease=Flu):")
+print(q3)
+
+#MARKOV MODEL:
+import numpy as np
+
+# Define the states and transition matrix
+states = ["Red", "Blue"]
+transition_matrix = np.array([[0.5, 0.5],  # From Red -> Red or Blue
+                              [0.5, 0.5]]) # From Blue -> Red or Blue
+
+# Function to simulate the Markov process
+def simulate_markov_process(initial_state, num_steps):
+    current_state = initial_state
+    state_sequence = [current_state]
+
+    for _ in range(num_steps):
+        if current_state == "Red":
+            next_state = np.random.choice(states, p=transition_matrix[0])
+        else:
+            next_state = np.random.choice(states, p=transition_matrix[1])
+
+        state_sequence.append(next_state)
+        current_state = next_state
+
+    return state_sequence
+
+# Simulate the process starting from "Red" and for 10 steps
+initial_state = "Red"
+num_steps = 10
+state_sequence = simulate_markov_process(initial_state, num_steps)
+
+# Output the sequence of states
+print(f"State sequence for {num_steps} steps starting from {initial_state}:")
+print(" -> ".join(state_sequence))
+
+
+
+2) #Q4:
+import numpy as np
+
+states = ['Sunny', 'Cloudy', 'Rainy']
+state_map = {0: 'Sunny', 1: 'Cloudy', 2: 'Rainy'}
+
+transition_matrix = [
+    [0.6, 0.3, 0.1],
+    [0.4, 0.4, 0.2],
+    [0.2, 0.3, 0.5]
+]
+
+def simulate_weather(days, start_state):
+    current_state_idx = states.index(start_state)
+    sequence = [start_state]
+
+    for _ in range(days - 1):
+        next_state_idx = np.random.choice(
+            [0, 1, 2],
+            p=transition_matrix[current_state_idx]
+        )
+        sequence.append(state_map[next_state_idx])
+        current_state_idx = next_state_idx
+
+    return sequence
+
+simulation_10_days = simulate_weather(10, 'Sunny')
+print(f"Weather for the next 10 days: {simulation_10_days}")
+
+trials = 100000
+at_least_3_rainy = 0
+
+for _ in range(trials):
+    result = simulate_weather(10, 'Sunny')
+    rainy_days = result.count('Rainy')
+    if rainy_days >= 3:
+        at_least_3_rainy += 1
+
+final_probability = at_least_3_rainy / trials
+print(f"Probability of at least 3 rainy days: {final_probability:.4f}")
+
+
+
+#UNIVARIATE:
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+f, ax = plt.subplots(1, 2, figsize=(20, 10))
+
+# Countplot
+sns.countplot(x='sex', data=df_por, palette='bright', ax=ax[0], saturation=0.95)
+
+for container in ax[0].containers:
+    ax[0].bar_label(container, color='black', size=14)
+
+ax[0].set_title("Gender Count")
+
+# Pie chart
+size = df_por['sex'].value_counts()
+ax[1].pie(size, labels=size.index, explode=[0, 0.1],
+          autopct='%1.1f%%', shadow=True)
+
+ax[1].set_title("Gender Distribution")
+
+plt.tight_layout()
+plt.show()
+
+
+#BIVARIATE:
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+Group_data2 = df_por.groupby('sex')
+
+f, ax = plt.subplots(1, 3, figsize=(20, 8))
+
+# G1
+sns.barplot(x=Group_data2['G1'].mean().index,
+            y=Group_data2['G1'].mean().values,
+            palette='mako', ax=ax[0])
+
+ax[0].set_title('G1 Score', color='#005ce6', size=20)
+
+for container in ax[0].containers:
+    ax[0].bar_label(container, color='black', size=12)
+
+
+# G2
+sns.barplot(x=Group_data2['G2'].mean().index,
+            y=Group_data2['G2'].mean().values,
+            palette='flare', ax=ax[1])
+
+ax[1].set_title('G2 Score', color='#005ce6', size=20)
+
+for container in ax[1].containers:
+    ax[1].bar_label(container, color='black', size=12)
+
+
+# G3
+sns.barplot(x=Group_data2['G3'].mean().index,
+            y=Group_data2['G3'].mean().values,
+            palette='coolwarm', ax=ax[2])
+
+ax[2].set_title('G3 Score', color='#005ce6', size=20)
+
+for container in ax[2].containers:
+    ax[2].bar_label(container, color='black', size=12)
+
+plt.tight_layout()
+plt.show()
+
+
+#LINEAR REGRESSION:
+import numpy as np
+import pandas as pd
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
+
+# Generate some sample data
+# Let's say we are predicting 'y' based on 'x'
+np.random.seed(42)
+
+# x will be a 2D array with 100 samples and 1 feature
+x = np.random.rand(100, 1) * 10  # Random values between 0 and 10
+
+# y will be a linear function of x with some noise
+y = 3 * x.flatten() + np.random.randn(100) * 2  # y = 3 * x + noise
+
+# Split the data into training and testing sets
+x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=42)
+
+# Create and train the Linear Regression model
+LR = LinearRegression()
+ModelLR = LR.fit(x_train, y_train)
+
+# Predict on the test data
+PredictionLR = ModelLR.predict(x_test)
+
+# Print the predictions
+print("Predictions:", PredictionLR)
+
+# Optional: Print the Mean Squared Error (MSE) to evaluate the model
+mse = mean_squared_error(y_test, PredictionLR)
+print(f"Mean Squared Error: {mse}")
+
+
+#DECISION TREE:
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.metrics import accuracy_score
+from sklearn.model_selection import train_test_split
+import numpy as np
+
+# Example Data (make sure to define x and y)
+# Let's generate some simple data for classification
+# x will be random values, and y will be a binary classification target
+np.random.seed(42)
+
+# x = 100 samples with 5 features each
+x = np.random.rand(100, 5)
+
+# y = binary target with values 0 or 1
+y = np.random.randint(0, 2, 100)
+
+# Split the data into training and testing sets
+x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=42)
+
+# Initialize the DecisionTreeClassifier
+DT = DecisionTreeClassifier()
+
+# Train the model
+ModelDT = DT.fit(x_train, y_train)
+
+# Model Testing (Prediction)
+PredictionDT = DT.predict(x_test)
+print("Predictions:", PredictionDT)
+
+# Model Training Accuracy
+print('====================DT Training Accuracy===============')
+tracDT = DT.score(x_train, y_train)  # The score method gives accuracy directly
+TrainingAccDT = tracDT * 100
+print(f"Training Accuracy: {TrainingAccDT:.2f}%")
+
+# Model Testing Accuracy
+print('=====================DT Testing Accuracy=================')
+teacDT = accuracy_score(y_test, PredictionDT)
+testingAccDT = teacDT * 100
+print(f"Testing Accuracy: {testingAccDT:.2f}%")
+
+
+#K MEANS:
+
+# Import libraries
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.cluster import KMeans
+#[1, 2], [1, 4], [1, 0]      → left side points
+#[10, 2], [10, 4], [10, 0]   → right side points
+# Sample data (2D points)
+X = np.array([
+    [1, 2], [1, 4], [1, 0],
+    [10, 2], [10, 4], [10, 0]
+])
+
+# Apply KMeans
+kmeans = KMeans(n_clusters=2, random_state=0)
+kmeans.fit(X)
+
+# Get results
+labels = kmeans.labels_          # Cluster labels
+centroids = kmeans.cluster_centers_  # Centroids
+
+print("Labels:", labels)
+print("Centroids:\n", centroids)
+
+# Plot clusters
+plt.scatter(X[:, 0], X[:, 1], c=labels, cmap='viridis')
+plt.scatter(centroids[:, 0], centroids[:, 1], c='red', marker='X', s=200)
+plt.title("K-Means Clustering")
+plt.show()
+
+#LOGISTIC REGRESSION:
+# Example of using Scikit-learn to train a classifier (Logistic Regression)
+from sklearn.datasets import load_iris
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score
+
+# Load dataset
+data = load_iris()
+X = data.data
+y = data.target
+
+# Train-test split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+
+# Create a logistic regression model
+model = LogisticRegression(max_iter=200)
+
+# Train the model
+model.fit(X_train, y_train)
+
+# Make predictions
+y_pred = model.predict(X_test)
+
+# Evaluate accuracy
+accuracy = accuracy_score(y_test, y_pred)
+print(f'Accuracy: {accuracy}')
+
+
